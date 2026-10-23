@@ -88,16 +88,17 @@ def gerar_analise_gemini(dados_jogo):
             model='gemini-3.8-flash',
             contents=prompt,
         )
-        return response.text
+        return response.text if response and response.text else "⚠️ Não foi possível obter resposta da IA."
     except Exception as e:
         print(f"❌ Erro ao gerar análise com o Gemini: {e}")
-        return "Desculpe, ocorreu um erro ao gerar a análise neste momento."
+        return f"❌ Erro na geração da IA: {e}"
 
 # ==========================================
 # COMANDO INTERATIVO COM ASSOCIAÇÃO INTELIGENTE
 # ==========================================
 async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Executado quando o utilizador envia /analise [Equipa] no Telegram"""
+    mensagem_status = None
     try:
         termo_bruto = " ".join(context.args).strip()
         termo_limpo = limpar_termos_ruido(termo_bruto)
@@ -125,7 +126,7 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 home_clean = limpar_termos_ruido(home_raw)
                 away_clean = limpar_termos_ruido(away_raw)
                 
-                # 1. Pesquisa direta da palavra limpa principal (ex: "vitoria" em "vitoria guimaraes")
+                # 1. Pesquisa direta da palavra limpa principal
                 if termo_limpo in home_clean or termo_limpo in away_clean:
                     jogo_selecionado = jogo
                     break
@@ -153,15 +154,27 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             jogo_selecionado = jogos[0]
 
-        analise = await asyncio.to_thread(gerar_analise_gemini, jogo_selecionado)
+        await mensagem_status.edit_text("🤖 A gerar a análise matemática com o Gemini...")
+        
+        # Executa com timeout de segurança para evitar que fique preso indefinidamente
+        analise = await asyncio.wait_for(
+            asyncio.to_thread(gerar_analise_gemini, jogo_selecionado),
+            timeout=25.0
+        )
         
         await mensagem_status.edit_text(analise, parse_mode='Markdown')
+
+    except asyncio.TimeoutError:
+        print("❌ Timeout na resposta do Gemini.")
+        if mensagem_status:
+            await mensagem_status.edit_text("⚠️ A análise demorou demasiado tempo a responder. Por favor tente novamente.")
     except Exception as e:
         print(f"❌ Erro no comando /analise: {e}")
-        try:
-            await mensagem_status.edit_text("❌ Ocorreu um erro ao processar a sua solicitação.")
-        except:
-            pass
+        if mensagem_status:
+            try:
+                await mensagem_status.edit_text("❌ Ocorreu um erro ao processar a solicitação.")
+            except:
+                pass
 
 def main():
     """Inicia o Bot do Telegram"""
