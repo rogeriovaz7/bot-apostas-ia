@@ -23,8 +23,7 @@ if not all([TELEGRAM_TOKEN, GEMINI_API_KEY, ODDS_API_KEY]):
 client_gemini = genai.Client(api_key=GEMINI_API_KEY)
 
 async def buscar_odds_futebol():
-    """Busca odds nas principais ligas europeias e em Portugal em simultâneo"""
-    # Ligas principais: Portugal, Premier League, La Liga, Serie A, Champions League
+    """Busca odds em várias ligas e agora incluindo múltiplos mercados (1X2 e Totais/Golos)"""
     ligas = [
         "soccer_portugal_primeira_liga",
         "soccer_epl",
@@ -33,10 +32,13 @@ async def buscar_odds_futebol():
         "soccer_uefa_champions_league"
     ]
     
+    # Adicionamos 'totals' (Mais/Menos Golos) ao parâmetro markets
+    markets = "h2h,totals"
+    
     todos_os_jogos = []
     async with httpx.AsyncClient(timeout=15.0) as client:
         for liga in ligas:
-            url = f"https://api.the-odds-api.com/v4/sports/{liga}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h"
+            url = f"https://api.the-odds-api.com/v4/sports/{liga}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets={markets}"
             try:
                 response = await client.get(url)
                 data = response.json()
@@ -48,13 +50,13 @@ async def buscar_odds_futebol():
     return todos_os_jogos
 
 def gerar_analise_gemini(dados_jogo):
-    """Pede ao Gemini para analisar o jogo e encontrar valor matemático (+EV)"""
+    """Pede ao Gemini para analisar o jogo e encontrar valor matemático (+EV) em qualquer mercado"""
     prompt = f"""
     Atue como um analista sénior de apostas desportivas especializado em valor matemático (+EV).
-    Analise os seguintes dados do jogo de futebol e respetivas odds de mercado:
+    Analise os seguintes dados do jogo de futebol, que incluem cotações para o resultado final (1X2) e o mercado de golos (Mais/Menos):
     {dados_jogo}
     
-    Identifique se existe alguma oportunidade com valor esperado positivo. Formate a resposta rigorosamente em Markdown para o Telegram com esta estrutura exata:
+    Selecione o mercado com **melhor valor esperado positivo (+EV)**, que pode ser o Vencedor (1X2) ou o mercado de Golos (ex: Mais/Menos de 2.5 Golos). Formate a resposta rigorosamente em Markdown para o Telegram com esta estrutura exata:
     
     ⚽ **JOGO:** [Equipa A vs Equipa B]
     📊 **MERCADO RECOMENDADO:** [Ex: Vitória Equipa A / Mais de 2.5 Golos]
@@ -73,18 +75,18 @@ def gerar_analise_gemini(dados_jogo):
         return "Desculpe, ocorreu um erro ao gerar a análise neste momento."
 
 # ==========================================
-# COMANDO INTERATIVO GLOBAL: /analise
+# COMANDO INTERATIVO: /analise
 # ==========================================
 async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Executado quando o utilizador envia /analise [Equipa] no Telegram"""
     try:
         termo_pesquisa = " ".join(context.args).strip().lower()
         
-        mensagem_status = await update.message.reply_text("🔍 A varrer todos os campeonatos mundiais na API de odds...")
+        mensagem_status = await update.message.reply_text("🔍 A consultar múltiplos mercados de odds e a pedir análise ao Gemini...")
         
         jogos = await buscar_odds_futebol()
         if not jogos:
-            await mensagem_status.edit_text("⚠️ De momento não foram encontrados jogos ativos em nenhum campeonato.")
+            await mensagem_status.edit_text("⚠️ De momento não foram encontrados jogos ativos.")
             return
 
         jogo_selecionado = None
@@ -99,8 +101,7 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if not jogo_selecionado:
                 await mensagem_status.edit_text(
-                    f"⚠️ Não encontrei nenhum jogo ativo para **'{termo_pesquisa}'** em nenhum campeonato global.\n\n"
-                    f"Nota: Apenas aparecem jogos que tenham cotações ativas nas casas de apostas no momento."
+                    f"⚠️ Não encontrei nenhum jogo ativo para **'{termo_pesquisa}'**."
                 , parse_mode='Markdown')
                 return
         else:
@@ -118,7 +119,7 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Inicia o Bot do Telegram"""
-    print("🤖 A configurar ligação ao Telegram com campeonatos globais...")
+    print("🤖 A configurar ligação ao Telegram com múltiplos mercados...")
     
     application = (
         ApplicationBuilder()
@@ -137,7 +138,7 @@ def main():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-    print("✅ Bot online a monitorizar todas as ligas de futebol do mundo!")
+    print("✅ Bot online com suporte a mercados de golos e resultado!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
