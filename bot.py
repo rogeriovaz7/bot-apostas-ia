@@ -55,7 +55,7 @@ def gerar_analise_gemini(dados_jogo):
     try:
         # Chamada correta para a nova SDK do Google GenAI
         response = client_gemini.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.8-flash',
             contents=prompt,
         )
         return response.text
