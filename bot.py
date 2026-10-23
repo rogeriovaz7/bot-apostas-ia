@@ -1,6 +1,6 @@
 import os
 import requests
-from openai import OpenAI
+from google import genai
 from telegram import Bot
 from dotenv import load_dotenv
 
@@ -9,16 +9,16 @@ load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 
-# Validação rápida para garantir que preencheu o .env
-if not all([TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, OPENAI_API_KEY, ODDS_API_KEY]):
-    print("⚠️ ERRO: Alguma chave está em falta no ficheiro .env! Verifique se preencheu todos os campos.")
+# Validação rápida
+if not all([TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, GEMINI_API_KEY, ODDS_API_KEY]):
+    print("⚠️ ERRO: Alguma chave está em falta no ficheiro .env!")
     exit(1)
 
-# Inicializar clientes
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Inicializar clientes (Gemini e Telegram)
+client_gemini = genai.Client(api_key=GEMINI_API_KEY)
 bot = Bot(token=TELEGRAM_TOKEN)
 
 def buscar_odds_futebol():
@@ -27,8 +27,6 @@ def buscar_odds_futebol():
     try:
         response = requests.get(url)
         data = response.json()
-        
-        # Verifica se a API retornou uma lista válida de jogos
         if isinstance(data, list):
             return data[:2] if len(data) > 0 else []
         else:
@@ -38,8 +36,8 @@ def buscar_odds_futebol():
         print(f"❌ Erro ao buscar odds: {e}")
         return []
 
-def gerar_analise_ia(dados_jogo):
-    """Pede ao ChatGPT para analisar o jogo e encontrar valor matemático"""
+def gerar_analise_gemini(dados_jogo):
+    """Pede ao Gemini para analisar o jogo e encontrar valor matemático"""
     prompt = f"""
     Atue como um analista sénior de apostas desportivas especializado em valor matemático (+EV).
     Analise os seguintes dados do jogo de futebol e respetivas odds de mercado:
@@ -55,43 +53,39 @@ def gerar_analise_ia(dados_jogo):
     """
     
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3
+        # Chamada correta para a nova SDK do Google GenAI
+        response = client_gemini.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
         )
-        return response.choices[0].message.content
+        return response.text
     except Exception as e:
-        print(f"❌ Erro ao gerar análise com a OpenAI: {e}")
+        print(f"❌ Erro ao gerar análise com o Gemini: {e}")
         return None
 
 def publicar_sinal_canal():
-    print("🔍 A procurar jogos na API e a gerar análise com IA...")
+    print("🔍 A procurar jogos na API e a gerar análise com o Gemini...")
     jogos = buscar_odds_futebol()
     
     if not jogos:
-        print("⚠️ Nenhum jogo encontrado ou erro na API de odds. Tente novamente mais tarde.")
+        print("⚠️ Nenhum jogo encontrado ou erro na API de odds.")
         return
 
-    # Analisa o primeiro jogo da lista
-    analise_pronta = gerar_analise_ia(jogos[0])
+    analise_pronta = gerar_analise_gemini(jogos[0])
     
     if not analise_pronta:
         print("⚠️ A análise não pôde ser gerada.")
         return
 
     try:
-        # Envia a mensagem gerada para o seu canal do Telegram
         bot.send_message(
             chat_id=TELEGRAM_CHANNEL_ID,
             text=analise_pronta,
             parse_mode='Markdown'
         )
-        print("✅ Sucesso! Sinal publicado no canal do Telegram.")
+        print("✅ Sucesso! Sinal gerado pelo Gemini e publicado no canal.")
     except Exception as e:
         print(f"❌ Erro ao enviar mensagem para o Telegram: {e}")
-        print("Dica: Certifique-se de que o bot é Administrador do canal do Telegram.")
 
 if __name__ == "__main__":
-    # Executa o teste imediato ao iniciar o script
     publicar_sinal_canal()
