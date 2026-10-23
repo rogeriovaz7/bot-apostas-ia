@@ -85,7 +85,7 @@ async def buscar_odds_futebol():
     return todos_os_jogos
 
 def gerar_analise_gemini(dados_jogo):
-    """Pede ao Gemini para analisar o jogo com resiliência a erros temporários 503."""
+    """Pede ao Gemini para analisar o jogo com fallback automático de modelos em caso de sobrecarga."""
     prompt = f"""
     Atue como um analista sénior de apostas desportivas especializado em valor matemático (+EV).
     Analise os seguintes dados do jogo de futebol, que incluem cotações para o resultado final (1X2) e o mercado de golos (Mais/Menos):
@@ -96,28 +96,27 @@ def gerar_analise_gemini(dados_jogo):
     ⚽ **JOGO:** [Equipa A vs Equipa B]
     📊 **MERCADO RECOMENDADO:** [Ex: Vitória Equipa A / Mais de 2.5 Golos]
     📈 **ODD MÍNIMA SUGERIDA:** [Ex: 1.85]
-    💡 **JUSTIFICATIVA MATEMÁTICA:** [ExplIQUE em 2 frases curtas o porquê do valor]
+    💡 **JUSTIFICATIVA MATEMÁTICA:** [Explique em 2 frases curtas o porquê do valor]
     ⚠️ **GESTÃO DE RISCO:** [Recomendação de Stake, ex: 1 Unidade / 1% da banca]
     """
     
-    # Sistema de Retentativas em caso de instabilidade ou pico de carga (Error 503)
-    max_tentativas = 3
-    for tentativa in range(1, max_tentativas + 1):
-        try:
-            response = client_gemini.models.generate_content(
-                model='gemini-3.8-flash',
-                contents=prompt,
-            )
-            if response and response.text:
-                return response.text
-        except Exception as e:
-            print(f"⚠️ Tentativa {tentativa}/{max_tentativas} da IA falhou: {e}")
-            if tentativa < max_tentativas:
-                time.sleep(2)
-            else:
-                return "❌ Os servidores da IA estão temporariamente sobrecarregados. Por favor, tente novamente em alguns instantes."
-
-    return "❌ Não foi possível gerar a análise matemática neste momento."
+    # Lista de modelos por ordem de preferência para garantir estabilidade (fallback automático)
+    modelos_disponiveis = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']
+    
+    for modelo in modelos_disponiveis:
+        for tentativa in range(1, 3):  # 2 tentativas por modelo
+            try:
+                response = client_gemini.models.generate_content(
+                    model=modelo,
+                    contents=prompt,
+                )
+                if response and response.text:
+                    return response.text
+            except Exception as e:
+                print(f"⚠️ Tentativa com {modelo} (falha {tentativa}): {e}")
+                time.sleep(2 * tentativa)  # Espera progressiva (2s, 4s...)
+                
+    return "❌ Os servidores de IA estão com alta procura no momento. Por favor, aguarde alguns segundos e tente o comando novamente."
 
 # ==========================================
 # COMANDO INTERATIVO COM ASSOCIAÇÃO INTELIGENTE
@@ -207,7 +206,7 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Inicia o Bot do Telegram com tratamento do Event Loop."""
-    print("🤖 A iniciar o bot no Render com modelo estável e retentativas...")
+    print("🤖 A iniciar o bot no Render com fallback automático de modelos...")
     
     application = (
         ApplicationBuilder()
