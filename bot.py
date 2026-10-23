@@ -31,9 +31,16 @@ def remover_acentos(texto):
         if unicodedata.category(c) != 'Mn'
     ).lower()
 
+def limpar_termos_ruido(texto):
+    """Remove palavras de suporte/abreviaturas comuns que atrapalham a pesquisa"""
+    palavras_ignorar = {"sc", "fc", "cf", "cd", "ud", "sport", "clube", "de", "do", "da", "e"}
+    palavras = remover_acentos(texto).split()
+    filtradas = [p for p in palavras if p not in palavras_ignorar]
+    return " ".join(filtradas) if filtradas else remover_acentos(texto)
+
 def calcular_similaridade(a, b):
     """Retorna um valor de 0.0 a 1.0 indicando o quão parecidos dois textos são"""
-    return SequenceMatcher(None, remover_acentos(a), remover_acentos(b)).ratio()
+    return SequenceMatcher(None, a, b).ratio()
 
 async def buscar_odds_futebol():
     """Busca odds em várias ligas incluindo múltiplos mercados (1X2 e Totais/Golos)"""
@@ -93,7 +100,8 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Executado quando o utilizador envia /analise [Equipa] no Telegram"""
     try:
         termo_bruto = " ".join(context.args).strip()
-        termo_pesquisa = remover_acentos(termo_bruto)
+        termo_limpo = limpar_termos_ruido(termo_bruto)
+        termo_normalizado = remover_acentos(termo_bruto)
         
         mensagem_status = await update.message.reply_text("🔍 A consultar os jogos disponíveis e a associar a equipa...")
         
@@ -104,36 +112,35 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         jogo_selecionado = None
 
-        if termo_pesquisa:
+        if termo_bruto:
             melhor_pontuacao = 0.0
             
             for jogo in jogos:
                 home_raw = jogo.get("home_team", "")
                 away_raw = jogo.get("away_team", "")
                 
-                home_clean = remover_acentos(home_raw)
-                away_clean = remover_acentos(away_raw)
+                home_norm = remover_acentos(home_raw)
+                away_norm = remover_acentos(away_raw)
                 
-                # 1. Correspondência exata de sub-string (se o termo estiver contido no nome)
-                if termo_pesquisa in home_clean or termo_pesquisa in away_clean:
+                home_clean = limpar_termos_ruido(home_raw)
+                away_clean = limpar_termos_ruido(away_raw)
+                
+                # 1. Pesquisa direta da palavra limpa principal (ex: "vitoria" em "vitoria guimaraes")
+                if termo_limpo in home_clean or termo_limpo in away_clean:
                     jogo_selecionado = jogo
                     break
                 
-                # 2. Correspondência por palavras soltas (ex: "vitoria" ou "guimaraes")
-                palavras_termo = [p for p in termo_pesquisa.split() if len(p) > 3]
-                for palavra in palavras_termo:
-                    if palavra in home_clean or palavra in away_clean:
-                        jogo_selecionado = jogo
-                        break
-                if jogo_selecionado:
+                # 2. Pesquisa de sub-string no nome completo
+                if termo_normalizado in home_norm or termo_normalizado in away_norm:
+                    jogo_selecionado = jogo
                     break
 
-                # 3. Correspondência por similaridade de texto (Fuzzy Matching)
-                sim_home = calcular_similaridade(termo_pesquisa, home_clean)
-                sim_away = calcular_similaridade(termo_pesquisa, away_clean)
+                # 3. Fuzzy matching no nome limpo de ruídos
+                sim_home = calcular_similaridade(termo_limpo, home_clean)
+                sim_away = calcular_similaridade(termo_limpo, away_clean)
                 maior_sim = max(sim_home, sim_away)
 
-                if maior_sim > melhor_pontuacao and maior_sim > 0.35:
+                if maior_sim > melhor_pontuacao and maior_sim > 0.25:
                     melhor_pontuacao = maior_sim
                     jogo_selecionado = jogo
 
@@ -158,7 +165,7 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Inicia o Bot do Telegram"""
-    print("🤖 A configurar ligação ao Telegram com associação automática de equipas...")
+    print("🤖 A configurar ligação ao Telegram com filtro inteligente de equipas...")
     
     application = (
         ApplicationBuilder()
