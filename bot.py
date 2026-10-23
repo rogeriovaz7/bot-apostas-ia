@@ -1,5 +1,6 @@
 import os
 import asyncio
+import unicodedata
 import httpx
 from google import genai
 from telegram import Update
@@ -22,8 +23,15 @@ if not all([TELEGRAM_TOKEN, GEMINI_API_KEY, ODDS_API_KEY]):
 # Inicializar o cliente do Google Gemini
 client_gemini = genai.Client(api_key=GEMINI_API_KEY)
 
+def remover_acentos(texto):
+    """Remove acentos e converte para minúsculas para facilitar a pesquisa"""
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', texto)
+        if unicodedata.category(c) != 'Mn'
+    ).lower()
+
 async def buscar_odds_futebol():
-    """Busca odds em várias ligas e agora incluindo múltiplos mercados (1X2 e Totais/Golos)"""
+    """Busca odds em várias ligas incluindo múltiplos mercados (1X2 e Totais/Golos)"""
     ligas = [
         "soccer_portugal_primeira_liga",
         "soccer_epl",
@@ -32,7 +40,6 @@ async def buscar_odds_futebol():
         "soccer_uefa_champions_league"
     ]
     
-    # Adicionamos 'totals' (Mais/Menos Golos) ao parâmetro markets
     markets = "h2h,totals"
     
     todos_os_jogos = []
@@ -75,14 +82,15 @@ def gerar_analise_gemini(dados_jogo):
         return "Desculpe, ocorreu um erro ao gerar a análise neste momento."
 
 # ==========================================
-# COMANDO INTERATIVO: /analise
+# COMANDO INTERATIVO COM PESQUISA INTELIGENTE
 # ==========================================
 async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Executado quando o utilizador envia /analise [Equipa] no Telegram"""
     try:
-        termo_pesquisa = " ".join(context.args).strip().lower()
+        termo_bruto = " ".join(context.args).strip()
+        termo_pesquisa = remover_acentos(termo_bruto)
         
-        mensagem_status = await update.message.reply_text("🔍 A consultar múltiplos mercados de odds e a pedir análise ao Gemini...")
+        mensagem_status = await update.message.reply_text("🔍 A consultar múltiplos mercados de odds e a procurar o jogo...")
         
         jogos = await buscar_odds_futebol()
         if not jogos:
@@ -93,15 +101,17 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if termo_pesquisa:
             for jogo in jogos:
-                home = jogo.get("home_team", "").lower()
-                away = jogo.get("away_team", "").lower()
+                home = remover_acentos(jogo.get("home_team", ""))
+                away = remover_acentos(jogo.get("away_team", ""))
+                
                 if termo_pesquisa in home or termo_pesquisa in away:
                     jogo_selecionado = jogo
                     break
             
             if not jogo_selecionado:
                 await mensagem_status.edit_text(
-                    f"⚠️ Não encontrei nenhum jogo ativo para **'{termo_pesquisa}'**."
+                    f"⚠️ Não encontrei nenhum jogo ativo para **'{termo_bruto}'**.\n\n"
+                    f"💡 **Dica:** Tente pesquisar por uma parte mais curta do nome (ex: `/analise guimaraes` ou `/analise vitoria`)."
                 , parse_mode='Markdown')
                 return
         else:
@@ -119,7 +129,7 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Inicia o Bot do Telegram"""
-    print("🤖 A configurar ligação ao Telegram com múltiplos mercados...")
+    print("🤖 A configurar ligação ao Telegram com pesquisa inteligente e múltiplos mercados...")
     
     application = (
         ApplicationBuilder()
@@ -138,7 +148,7 @@ def main():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-    print("✅ Bot online com suporte a mercados de golos e resultado!")
+    print("✅ Bot online a escutar comandos!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
