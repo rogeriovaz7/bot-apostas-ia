@@ -105,7 +105,7 @@ def gerar_analise_gemini(dados_jogo):
     for tentativa in range(1, max_tentativas + 1):
         try:
             response = client_gemini.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.8-flash',
                 contents=prompt,
             )
             if response and response.text:
