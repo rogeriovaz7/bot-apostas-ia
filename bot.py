@@ -23,10 +23,11 @@ if not all([TELEGRAM_TOKEN, GEMINI_API_KEY, ODDS_API_KEY]):
 client_gemini = genai.Client(api_key=GEMINI_API_KEY)
 
 async def buscar_odds_futebol():
-    """Busca as odds de futebol da Premier League de forma assíncrona"""
-    url = f"https://api.the-odds-api.com/v4/sports/soccer_epl/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h"
+    """Busca os jogos de futebol de todos os campeonatos disponíveis na The Odds API"""
+    # Usamos o desporto geral 'soccer' para abranger todas as ligas mundiais
+    url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h"
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.get(url)
             data = response.json()
             if isinstance(data, list):
@@ -57,30 +58,30 @@ def gerar_analise_gemini(dados_jogo):
             contents=prompt,
         )
         return response.text
+    end except Exception as e:
     except Exception as e:
         print(f"❌ Erro ao gerar análise com o Gemini: {e}")
         return "Desculpe, ocorreu um erro ao gerar a análise neste momento."
 
 # ==========================================
-# COMANDO INTERATIVO COM FILTRO: /analise
+# COMANDO INTERATIVO GLOBAL: /analise
 # ==========================================
 async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Executado quando o utilizador envia /analise [Equipa] no Telegram"""
     try:
-        # Recolhe os argumentos enviados após /analise (ex: ["Arsenal"] ou ["Manchester", "City"])
         termo_pesquisa = " ".join(context.args).strip().lower()
         
-        mensagem_status = await update.message.reply_text("🔍 A consultar o mercado de odds e a procurar o jogo...")
+        mensagem_status = await update.message.reply_text("🔍 A varrer todos os campeonatos mundiais na API de odds...")
         
         jogos = await buscar_odds_futebol()
         if not jogos:
-            await mensagem_status.edit_text("⚠️ De momento não foram encontrados jogos disponíveis na API de odds.")
+            await mensagem_status.edit_text("⚠️ De momento não foram encontrados jogos ativos em nenhum campeonato.")
             return
 
         jogo_selecionado = None
 
         if termo_pesquisa:
-            # Procura o jogo onde a equipa da casa ou visitante contém o termo digitado
+            # Procura o termo em qualquer jogo de qualquer liga do mundo
             for jogo in jogos:
                 home = jogo.get("home_team", "").lower()
                 away = jogo.get("away_team", "").lower()
@@ -90,12 +91,12 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if not jogo_selecionado:
                 await mensagem_status.edit_text(
-                    f"⚠️ Não encontrei nenhum jogo ativo para o termo **'{termo_pesquisa}'**.\n\n"
-                    f"Tente pesquisar por outra equipa ou envie apenas `/analise` para ver uma sugestão automática."
+                    f"⚠️ Não encontrei nenhum jogo ativo para **'{termo_pesquisa}'** em nenhum campeonato global.\n\n"
+                    f"Nota: Apenas aparecem jogos que tenham cotações ativas nas casas de apostas no momento."
                 , parse_mode='Markdown')
                 return
         else:
-            # Se não escrever nada, pega no primeiro jogo disponível por defeito
+            # Se não escrever nada, pega no primeiro jogo global disponível
             jogo_selecionado = jogos[0]
 
         # Executa a geração da IA em segundo plano
@@ -111,7 +112,7 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Inicia o Bot do Telegram"""
-    print("🤖 A configurar ligação ao Telegram...")
+    print("🤖 A configurar ligação ao Telegram com campeonatos globais...")
     
     application = (
         ApplicationBuilder()
@@ -130,7 +131,7 @@ def main():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-    print("✅ Bot online com suporte a pesquisa de jogos por nome!")
+    print("✅ Bot online a monitorizar todas as ligas de futebol do mundo!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
