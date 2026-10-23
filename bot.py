@@ -24,6 +24,20 @@ if not all([TELEGRAM_TOKEN, GEMINI_API_KEY, ODDS_API_KEY]):
 # Inicializar o cliente do Google Gemini
 client_gemini = genai.Client(api_key=GEMINI_API_KEY)
 
+# Dicionário de sinónimos/apelidos para clubes conhecidos
+ALIAS_EQUIPAS = {
+    "vitoria sc": "guimaraes",
+    "vitoria sport clube": "guimaraes",
+    "vsc": "guimaraes",
+    "sporting cp": "sporting lisbon",
+    "slb": "benfica",
+    "sl benfica": "benfica",
+    "fcp": "porto",
+    "fc porto": "porto",
+    "braga": "sc braga",
+    "vitoria fc": "setubal"
+}
+
 def remover_acentos(texto):
     """Remove acentos e converte para minúsculas para facilitar a comparação"""
     return ''.join(
@@ -101,8 +115,11 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensagem_status = None
     try:
         termo_bruto = " ".join(context.args).strip()
-        termo_limpo = limpar_termos_ruido(termo_bruto)
         termo_normalizado = remover_acentos(termo_bruto)
+        
+        # 1. Verifica se existe alias direto (ex: "vitoria sc" -> "guimaraes")
+        termo_pesquisa = ALIAS_EQUIPAS.get(termo_normalizado, termo_normalizado)
+        termo_limpo = limpar_termos_ruido(termo_pesquisa)
         
         mensagem_status = await update.message.reply_text("🔍 A consultar os jogos disponíveis e a associar a equipa...")
         
@@ -126,29 +143,29 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 home_clean = limpar_termos_ruido(home_raw)
                 away_clean = limpar_termos_ruido(away_raw)
                 
-                # 1. Pesquisa direta da palavra limpa principal
-                if termo_limpo in home_clean or termo_limpo in away_clean:
+                # A) Pesquisa exata por palavra no nome da equipa na API (ex: "guimaraes" em "Vitoria Guimaraes")
+                if termo_pesquisa in home_norm or termo_pesquisa in away_norm:
                     jogo_selecionado = jogo
                     break
                 
-                # 2. Pesquisa de sub-string no nome completo
-                if termo_normalizado in home_norm or termo_normalizado in away_norm:
+                # B) Pesquisa exata do termo limpo
+                if termo_limpo in home_clean or termo_limpo in away_clean:
                     jogo_selecionado = jogo
                     break
 
-                # 3. Fuzzy matching no nome limpo de ruídos
-                sim_home = calcular_similaridade(termo_limpo, home_clean)
-                sim_away = calcular_similaridade(termo_limpo, away_clean)
+                # C) Fuzzy matching exigindo pontuação mais alta (mínimo 0.55 para evitar falsos positivos)
+                sim_home = max(calcular_similaridade(termo_pesquisa, home_norm), calcular_similaridade(termo_limpo, home_clean))
+                sim_away = max(calcular_similaridade(termo_pesquisa, away_norm), calcular_similaridade(termo_limpo, away_clean))
                 maior_sim = max(sim_home, sim_away)
 
-                if maior_sim > melhor_pontuacao and maior_sim > 0.25:
+                if maior_sim > melhor_pontuacao and maior_sim >= 0.55:
                     melhor_pontuacao = maior_sim
                     jogo_selecionado = jogo
 
             if not jogo_selecionado:
                 await mensagem_status.edit_text(
                     f"⚠️ Não foi possível associar **'{termo_bruto}'** a nenhum jogo ativo de momento.\n\n"
-                    f"💡 **Dica:** Tente pesquisar por uma parte mais simples do nome (ex: `/analise guimaraes` ou `/analise vitoria`)."
+                    f"💡 **Dica:** Tente pesquisar por uma parte mais simples do nome (ex: `/analise guimaraes`)."
                 , parse_mode='Markdown')
                 return
         else:
@@ -156,7 +173,6 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await mensagem_status.edit_text("🤖 A gerar a análise matemática com o Gemini...")
         
-        # Executa com timeout de segurança para evitar que fique preso indefinidamente
         analise = await asyncio.wait_for(
             asyncio.to_thread(gerar_analise_gemini, jogo_selecionado),
             timeout=25.0
@@ -178,7 +194,7 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Inicia o Bot do Telegram"""
-    print("🤖 A configurar ligação ao Telegram com filtro inteligente de equipas...")
+    print("🤖 A configurar ligação ao Telegram com filtro preciso de equipas...")
     
     application = (
         ApplicationBuilder()
