@@ -2,6 +2,7 @@ import os
 import asyncio
 import unicodedata
 import httpx
+from difflib import SequenceMatcher
 from google import genai
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -24,11 +25,15 @@ if not all([TELEGRAM_TOKEN, GEMINI_API_KEY, ODDS_API_KEY]):
 client_gemini = genai.Client(api_key=GEMINI_API_KEY)
 
 def remover_acentos(texto):
-    """Remove acentos e converte para minúsculas para facilitar a pesquisa"""
+    """Remove acentos e converte para minúsculas para facilitar a comparação"""
     return ''.join(
         c for c in unicodedata.normalize('NFD', texto)
         if unicodedata.category(c) != 'Mn'
     ).lower()
+
+def calcular_similaridade(a, b):
+    """Retorna um valor de 0.0 a 1.0 indicando o quão parecidos dois textos são"""
+    return SequenceMatcher(None, remover_acentos(a), remover_acentos(b)).ratio()
 
 async def buscar_odds_futebol():
     """Busca odds em várias ligas incluindo múltiplos mercados (1X2 e Totais/Golos)"""
@@ -82,7 +87,7 @@ def gerar_analise_gemini(dados_jogo):
         return "Desculpe, ocorreu um erro ao gerar a análise neste momento."
 
 # ==========================================
-# COMANDO INTERATIVO COM PESQUISA INTELIGENTE
+# COMANDO INTERATIVO COM ASSOCIAÇÃO INTELIGENTE
 # ==========================================
 async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Executado quando o utilizador envia /analise [Equipa] no Telegram"""
@@ -90,7 +95,7 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
         termo_bruto = " ".join(context.args).strip()
         termo_pesquisa = remover_acentos(termo_bruto)
         
-        mensagem_status = await update.message.reply_text("🔍 A consultar múltiplos mercados de odds e a procurar o jogo...")
+        mensagem_status = await update.message.reply_text("🔍 A consultar os jogos disponíveis e a associar a equipa...")
         
         jogos = await buscar_odds_futebol()
         if not jogos:
@@ -100,18 +105,42 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
         jogo_selecionado = None
 
         if termo_pesquisa:
+            melhor_pontuacao = 0.0
+            
             for jogo in jogos:
-                home = remover_acentos(jogo.get("home_team", ""))
-                away = remover_acentos(jogo.get("away_team", ""))
+                home_raw = jogo.get("home_team", "")
+                away_raw = jogo.get("away_team", "")
                 
-                if termo_pesquisa in home or termo_pesquisa in away:
+                home_clean = remover_acentos(home_raw)
+                away_clean = remover_acentos(away_raw)
+                
+                # 1. Correspondência exata de sub-string (se o termo estiver contido no nome)
+                if termo_pesquisa in home_clean or termo_pesquisa in away_clean:
                     jogo_selecionado = jogo
                     break
-            
+                
+                # 2. Correspondência por palavras soltas (ex: "vitoria" ou "guimaraes")
+                palavras_termo = [p for p in termo_pesquisa.split() if len(p) > 3]
+                for palavra in palavras_termo:
+                    if palavra in home_clean or palavra in away_clean:
+                        jogo_selecionado = jogo
+                        break
+                if jogo_selecionado:
+                    break
+
+                # 3. Correspondência por similaridade de texto (Fuzzy Matching)
+                sim_home = calcular_similaridade(termo_pesquisa, home_clean)
+                sim_away = calcular_similaridade(termo_pesquisa, away_clean)
+                maior_sim = max(sim_home, sim_away)
+
+                if maior_sim > melhor_pontuacao and maior_sim > 0.35:
+                    melhor_pontuacao = maior_sim
+                    jogo_selecionado = jogo
+
             if not jogo_selecionado:
                 await mensagem_status.edit_text(
-                    f"⚠️ Não encontrei nenhum jogo ativo para **'{termo_bruto}'**.\n\n"
-                    f"💡 **Dica:** Tente pesquisar por uma parte mais curta do nome (ex: `/analise guimaraes` ou `/analise vitoria`)."
+                    f"⚠️ Não foi possível associar **'{termo_bruto}'** a nenhum jogo ativo de momento.\n\n"
+                    f"💡 **Dica:** Tente pesquisar por uma parte mais simples do nome (ex: `/analise guimaraes` ou `/analise vitoria`)."
                 , parse_mode='Markdown')
                 return
         else:
@@ -129,7 +158,7 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Inicia o Bot do Telegram"""
-    print("🤖 A configurar ligação ao Telegram com pesquisa inteligente e múltiplos mercados...")
+    print("🤖 A configurar ligação ao Telegram com associação automática de equipas...")
     
     application = (
         ApplicationBuilder()
