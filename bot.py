@@ -24,7 +24,6 @@ client_gemini = genai.Client(api_key=GEMINI_API_KEY)
 
 async def buscar_odds_futebol():
     """Busca os jogos de futebol de todos os campeonatos disponíveis na The Odds API"""
-    # Usamos o desporto geral 'soccer' para abranger todas as ligas mundiais
     url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h"
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
@@ -58,7 +57,6 @@ def gerar_analise_gemini(dados_jogo):
             contents=prompt,
         )
         return response.text
-    end except Exception as e:
     except Exception as e:
         print(f"❌ Erro ao gerar análise com o Gemini: {e}")
         return "Desculpe, ocorreu um erro ao gerar a análise neste momento."
@@ -81,7 +79,6 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
         jogo_selecionado = None
 
         if termo_pesquisa:
-            # Procura o termo em qualquer jogo de qualquer liga do mundo
             for jogo in jogos:
                 home = jogo.get("home_team", "").lower()
                 away = jogo.get("away_team", "").lower()
@@ -96,10 +93,8 @@ async def cmd_analise(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 , parse_mode='Markdown')
                 return
         else:
-            # Se não escrever nada, pega no primeiro jogo global disponível
             jogo_selecionado = jogos[0]
 
-        # Executa a geração da IA em segundo plano
         analise = await asyncio.to_thread(gerar_analise_gemini, jogo_selecionado)
         
         await mensagem_status.edit_text(analise, parse_mode='Markdown')
