@@ -99,7 +99,7 @@ def gerar_analise_gemini(dados_jogo):
     """
     try:
         response = client_gemini.models.generate_content(
-            model='gemini-3.8-flash',
+            model='gemini-2.5-flash',
             contents=prompt,
         )
         return response.text if response and response.text else "⚠️ Não foi possível obter resposta da IA."
