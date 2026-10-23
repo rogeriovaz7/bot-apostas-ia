@@ -23,18 +23,29 @@ if not all([TELEGRAM_TOKEN, GEMINI_API_KEY, ODDS_API_KEY]):
 client_gemini = genai.Client(api_key=GEMINI_API_KEY)
 
 async def buscar_odds_futebol():
-    """Busca os jogos de futebol de todos os campeonatos disponíveis na The Odds API"""
-    url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h"
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.get(url)
-            data = response.json()
-            if isinstance(data, list):
-                return data if len(data) > 0 else []
-        return []
-    except Exception as e:
-        print(f"❌ Erro ao buscar odds: {e}")
-        return []
+    """Busca odds nas principais ligas europeias e em Portugal em simultâneo"""
+    # Ligas principais: Portugal, Premier League, La Liga, Serie A, Champions League
+    ligas = [
+        "soccer_portugal_primeira_liga",
+        "soccer_epl",
+        "soccer_spain_la_liga",
+        "soccer_italy_serie_a",
+        "soccer_uefa_champions_league"
+    ]
+    
+    todos_os_jogos = []
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for liga in ligas:
+            url = f"https://api.the-odds-api.com/v4/sports/{liga}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h"
+            try:
+                response = await client.get(url)
+                data = response.json()
+                if isinstance(data, list) and len(data) > 0:
+                    todos_os_jogos.extend(data)
+            except Exception as e:
+                print(f"⚠️ Erro ao buscar liga {liga}: {e}")
+                
+    return todos_os_jogos
 
 def gerar_analise_gemini(dados_jogo):
     """Pede ao Gemini para analisar o jogo e encontrar valor matemático (+EV)"""
